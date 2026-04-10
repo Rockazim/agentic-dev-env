@@ -1,0 +1,12 @@
+node_modules/
+dist/
+out/
+*.log
+
+# Local agent config — do not commit
+CLAUDE.md
+.claude/
+.codex
+
+# Reference screenshots
+*.JPG

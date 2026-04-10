@@ -1,107 +1,107 @@
-# Agentic Dev Environment
+# ADE — Agentic Dev Environment
 
-A project-based, multi-agent development environment built around parallel AI chats inside the same repo.
+A multi-agent terminal workspace. Run parallel AI coding sessions inside one project.
 
-## Overview
+ADE is a desktop app that lets you open a project and split it into a grid of terminals — each running its own shell, Claude Code session, Codex session, or any CLI agent. All terminals share the same repo. Git integration is built in.
 
-This project is a desktop app for working with multiple AI coding chats inside one project.
+Think tmux or iTerm2 splits, but purpose-built for working with multiple AI agents at once.
 
-Instead of one assistant panel, each project can have multiple chats open at the same time. For example, one chat could debug an issue, another could refactor code, another could write docs, and another could investigate a deployment problem.
+## What it does
 
-Each chat is chat-first, but it can use CLI tools when needed.
+- Open projects as workspace tabs
+- Each workspace is a grid of real terminal panes (2, 3, 4, 6, 8, or 9)
+- Every pane is a full PTY — run shells, Claude Code, Codex, or anything
+- All panes in a workspace share the same working directory
+- Create multiple workspaces, switch between them
+- Git-aware: see branch, diffs, changed files, stage and commit
 
-The goal is not to recreate VS Code.
+## Screenshot
 
-The goal is to create a better environment for managing multiple AI coding agents inside one repo.
+The UI is a grid of terminal panes with workspace tabs at the top:
 
-## Core Idea
+```
+[Workspace 1] [Workspace 2] [+]
+┌─────────────┬─────────────┬─────────────┐
+│ claude code  │ codex        │ bash         │
+│ > debug bug  │ > write docs │ > npm test   │
+│              │              │              │
+├─────────────┼─────────────┼─────────────┤
+│ claude code  │ codex        │ git status   │
+│ > refactor   │ > add tests  │ > git diff   │
+│              │              │              │
+└─────────────┴─────────────┴─────────────┘
+```
 
-* each tab is a project
-* each project can have multiple chats open at once
-* one tab could have 4 chats open in a grid
-* chats share the same repo context
-* each chat has its own conversation history
-* chats can use CLI tools when needed
-* support providers like Claude Code and Codex
-* include voice typing
-* include git integration
+## Stack
 
-## Example
+- **Electron** — desktop shell
+- **xterm.js** + **node-pty** — real terminal emulation
+- **Vanilla JS** — renderer (no framework)
+- **TypeScript** — backend services
 
-Inside a project tab called `skinmerge`, you might have 4 chats open:
+## Project structure
 
-1. debug pricing bug
-2. refactor trade-up filters
-3. write docs
-4. investigate deployment issue
+```
+electron/
+  main.js              Electron main process
+  preload.js           Context bridge (IPC)
+  terminal-manager.js  PTY session lifecycle, shell detection
+backend/
+  src/
+    contracts.ts       Type definitions, port interfaces
+    WorkspaceBackend.ts  Orchestrator (projects, chats, sessions, git, voice)
+    platform.ts        OS detection, shell resolution, path normalization
+index.html             UI shell
+renderer.js            Frontend logic (workspaces, tabs, terminal grid)
+```
 
-All 4 chats work inside the same repo, but each has its own conversation.
+## Getting started
 
-## What This App Should Do
+```bash
+git clone https://github.com/user/Agentic-Development-Environment.git
+cd Agentic-Development-Environment
+npm install
+npm run dev
+```
 
-* open projects as tabs
-* let each project have multiple chats
-* let each chat use Claude Code or Codex
-* let chats run CLI actions when needed
-* show terminal output when tools run
-* keep chat history saved
-* support voice typing into the focused chat
-* support git actions and git awareness
+Requires Node.js 18+ and a working C++ toolchain for `node-pty` (node-gyp).
 
-## Git Integration
+On Windows, the app detects PowerShell, WSL, and cmd. On macOS/Linux it uses zsh or bash.
 
-Git should be part of the core workflow.
+## How workspaces work
 
-That includes things like:
+1. Press **+** to create a new workspace
+2. Pick a name, directory (browse or type), and pane count
+3. All panes open as terminals in that directory
+4. Switch between workspaces via tabs — terminals stay alive
+5. Close a tab to kill its terminals
 
-* seeing current branch
-* seeing changed files
-* viewing diffs
-* staging changes
-* committing changes
-* understanding which chat made which changes
+## Roadmap
 
-## MVP
+- [ ] Provider selector per pane (Claude Code, Codex, shell)
+- [ ] Git integration panel (branch, diffs, staging, commits)
+- [ ] Voice typing into focused pane
+- [ ] Chat history persistence
+- [ ] Pane resize / drag to rearrange
+- [ ] Agent-to-agent awareness (which agent changed which files)
+- [ ] Configurable grid layouts
+- [ ] Settings / preferences
 
-The first version should have:
+## Why this exists
 
-* project tabs
-* multiple chats per project
-* 2x2 or similar chat grid layout
-* provider selector per chat
-* Claude Code support
-* Codex support
-* CLI/tool execution from chats
-* visible terminal output
-* persistent chat history
-* voice typing
-* git integration
-* basic diff viewing
-* apply or reject changes
+Most AI coding tools give you one assistant panel inside an IDE, or one CLI session. ADE gives you a grid of them — all working in the same repo, all visible at once. It's built for the workflow where you have one agent debugging, another refactoring, another writing docs, and another investigating a deploy issue, all at the same time.
 
-## UX
+## Contributing
 
-A simple layout could be:
+This is an open-source project. Contributions welcome.
 
-* sidebar for projects
-* main area for chat grid
-* each chat has its own thread and input
-* terminal output can show inline or in a panel
-* git state and file changes should be visible
+1. Fork the repo
+2. Create a feature branch
+3. Make your changes
+4. Open a PR
 
-## Why This Exists
+See [AGENTS.md](AGENTS.md) for guidelines on how AI agents should work in this codebase.
 
-Most coding tools either:
+## License
 
-* focus on one assistant inside an IDE
-* or focus on the terminal itself
-
-This project is aiming for something else:
-
-multiple AI chats inside one project, with tool access, repo awareness, and git integration.
-
-## Summary
-
-This is a multi-agent coding workspace where each project tab can contain multiple AI chats working in parallel inside the same repo.
-
-The main interface is chat-first, with CLI access, voice typing, and git integration built in.
+MIT

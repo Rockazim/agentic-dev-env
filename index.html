@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<title>ADE</title>
+<link rel="stylesheet" href="./node_modules/@xterm/xterm/css/xterm.css">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --app:#090c12;
+  --chrome:#10131a;
+  --pane:#090d16;
+  --pane-2:#0d111a;
+  --line:#181d28;
+  --text:#d8deea;
+  --muted:#788093;
+  --muted-2:#555f73;
+  --green:#2bc168;
+  --cyan:#4fbad6;
+  --orange:#d06a1f;
+  --purple:#8a4fe0;
+  --red:#c04d5b;
+}
+html,body{height:100%}
+body{
+  overflow:hidden;
+  background:var(--app);
+  color:var(--text);
+  font-family:"SFMono-Regular","Cascadia Mono","JetBrains Mono","Menlo","Consolas",monospace;
+  font-size:12px;
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit;color:inherit}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#202636;border-radius:999px}
+
+.app{
+  height:100svh;
+  display:flex;
+  flex-direction:column;
+  background:linear-gradient(180deg, #0b0e14 0%, #090c12 100%);
+}
+.workspace-tabs{
+  height:28px;
+  display:flex;
+  align-items:stretch;
+  gap:1px;
+  padding:0 6px;
+  background:#0f1219;
+  border-bottom:1px solid #171c27;
+}
+.workspace-tab{
+  min-width:0;
+  border:0;
+  border-top:2px solid transparent;
+  background:linear-gradient(180deg, rgba(26,31,43,.95), rgba(18,22,31,.95));
+  color:var(--muted);
+  display:flex;
+  align-items:center;
+  gap:7px;
+  padding:0 12px;
+  cursor:pointer;
+}
+.workspace-tab:hover,
+.workspace-tab.active{
+  color:var(--text);
+  background:linear-gradient(180deg, rgba(34,40,54,.98), rgba(20,24,34,.98));
+}
+.workspace-tab[data-tone="green"]{border-top-color:var(--green)}
+.workspace-tab[data-tone="cyan"]{border-top-color:var(--cyan)}
+.workspace-tab[data-tone="orange"]{border-top-color:var(--orange)}
+.workspace-tab[data-tone="purple"]{border-top-color:var(--purple)}
+.workspace-tab[data-tone="red"]{border-top-color:var(--red)}
+.workspace-tab .dot{
+  width:7px;
+  height:7px;
+  border-radius:999px;
+  background:currentColor;
+  opacity:.7;
+}
+.workspace-tab .label{white-space:nowrap;font-size:11px}
+.workspace-tab .count{font-size:10px;color:var(--muted-2)}
+
+.stage{
+  flex:1;
+  min-height:0;
+  background:#0a0d14;
+}
+.grid{
+  height:100%;
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  grid-template-rows:repeat(2,minmax(0,1fr));
+  gap:1px;
+  background:var(--line);
+}
+.pane{
+  min-width:0;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  background:linear-gradient(180deg, var(--pane-2), var(--pane));
+}
+.pane.active{
+  box-shadow:inset 0 0 0 1px rgba(95,118,165,.24);
+}
+.pane-titlebar{
+  height:18px;
+  flex-shrink:0;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:0 8px;
+  color:var(--muted-2);
+  background:rgba(13,16,23,.98);
+  border-bottom:1px solid #121722;
+  font-size:10px;
+}
+.traffic{
+  display:flex;
+  gap:4px;
+}
+.traffic span{
+  width:6px;
+  height:6px;
+  border-radius:999px;
+  background:#242b39;
+}
+.pane-path{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.pane-runtime{
+  margin-left:auto;
+  color:#4d5769;
+}
+.terminal-host{
+  flex:1;
+  min-height:0;
+  padding:8px 6px 6px 8px;
+  overflow:hidden;
+}
+.terminal-host .xterm{
+  height:100%;
+}
+.terminal-host .xterm-viewport{
+  background:transparent !important;
+}
+.empty-state{
+  height:100%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:#616a7c;
+}
+
+/* add tab button */
+.tab-add{
+  border:0;
+  background:transparent;
+  color:var(--muted-2);
+  padding:0 10px;
+  cursor:pointer;
+  font-size:14px;
+  display:flex;
+  align-items:center;
+}
+.tab-add:hover{color:var(--muted)}
+
+/* close button on tabs */
+.tab-close{
+  margin-left:6px;
+  font-size:12px;
+  color:var(--muted-2);
+  cursor:pointer;
+  opacity:0;
+  transition:opacity .1s;
+}
+.workspace-tab:hover .tab-close{opacity:1}
+.tab-close:hover{color:var(--red)}
+
+/* new workspace dialog */
+.ws-dialog{
+  display:none;
+  position:fixed;
+  inset:0;
+  z-index:100;
+  align-items:center;
+  justify-content:center;
+  background:rgba(5,7,10,.7);
+  backdrop-filter:blur(4px);
+}
+.ws-dialog.open{display:flex}
+.ws-dialog-box{
+  width:380px;
+  background:#111520;
+  border:1px solid var(--line);
+  border-radius:6px;
+  padding:20px;
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+.ws-dialog-title{
+  font-size:13px;
+  color:var(--text);
+  font-weight:600;
+}
+.ws-field{display:flex;flex-direction:column;gap:4px}
+.ws-field label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+.ws-field input,
+.ws-field select{
+  background:#0a0e16;
+  border:1px solid var(--line);
+  color:var(--text);
+  padding:6px 8px;
+  border-radius:4px;
+  font-family:inherit;
+  font-size:12px;
+  outline:none;
+}
+.ws-field input:focus,
+.ws-field select:focus{border-color:var(--line-2)}
+.ws-field select{-webkit-appearance:none;cursor:pointer}
+.ws-field .path-row{display:flex;gap:6px}
+.ws-field .path-row input{flex:1}
+.ws-field .path-row button{
+  background:#1a1f2c;
+  border:1px solid var(--line);
+  color:var(--muted);
+  padding:4px 10px;
+  border-radius:4px;
+  cursor:pointer;
+  font-family:inherit;
+  font-size:11px;
+  white-space:nowrap;
+}
+.ws-field .path-row button:hover{color:var(--text);border-color:var(--line-2)}
+.ws-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
+.ws-actions button{
+  border:1px solid var(--line);
+  padding:6px 16px;
+  border-radius:4px;
+  font-family:inherit;
+  font-size:11px;
+  cursor:pointer;
+  background:transparent;
+  color:var(--muted);
+}
+.ws-actions button:hover{color:var(--text);border-color:var(--line-2)}
+.ws-actions button.primary{
+  background:#1a2436;
+  color:var(--text);
+  border-color:#2a3a54;
+}
+.ws-actions button.primary:hover{background:#223050}
+
+@media (max-width:1100px){
+  .grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    grid-template-rows:repeat(3,minmax(0,1fr));
+  }
+}
+
+@media (max-width:780px){
+  .workspace-tabs{overflow:auto}
+  .stage{overflow:auto}
+  .grid{
+    grid-template-columns:1fr;
+    grid-template-rows:none;
+    height:auto;
+    min-height:100%;
+  }
+  .pane{min-height:280px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="workspace-tabs" id="tab-bar">
+    <button class="tab-add" id="add-tab-btn" type="button" title="new workspace">+</button>
+  </div>
+  <div class="stage">
+    <div class="grid" id="grid">
+      <div class="empty-state">press + to create a workspace</div>
+    </div>
+  </div>
+</div>
+
+<!-- new workspace dialog -->
+<div class="ws-dialog" id="new-ws-dialog">
+  <div class="ws-dialog-box">
+    <div class="ws-dialog-title">new workspace</div>
+    <div class="ws-field">
+      <label>name</label>
+      <input id="ws-name" type="text" placeholder="my-project" spellcheck="false">
+    </div>
+    <div class="ws-field">
+      <label>directory</label>
+      <div class="path-row">
+        <input id="ws-path" type="text" placeholder="leave empty for current dir" spellcheck="false">
+        <button id="ws-browse" type="button">browse</button>
+      </div>
+    </div>
+    <div class="ws-field">
+      <label>panes</label>
+      <select id="ws-panes">
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="6" selected>6</option>
+        <option value="8">8</option>
+        <option value="9">9</option>
+      </select>
+    </div>
+    <div class="ws-actions">
+      <button id="ws-cancel" type="button">cancel</button>
+      <button id="ws-create" type="button" class="primary">create</button>
+    </div>
+  </div>
+</div>
+<script type="module" src="./renderer.js"></script>
+</body>
+</html>
