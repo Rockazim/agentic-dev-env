@@ -227,7 +227,7 @@ npm run dist:mac     # → macOS DMG
 
 <br><br>
 
-[Report a bug](https://github.com/Rockazim/Agentic-Development-Environment/issues) · [Request a feature](https://github.com/Rockazim/Agentic-Development-Environment/issues) · [Discussions](https://github.com/Rockazim/Agentic-Development-Environment/discussions)
+[Report a bug](https://github.com/Rockazim/Agentic-Development-Environment/issues) · [Request a feature](https://github.com/Rockazim/Agentic-Development-Environment/issues)
 
 <br>
 

@@ -1,6 +1,15 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("adeDesktop", {
+  logApp(category, message, details) {
+    ipcRenderer.send("app:log", { category, message, details });
+  },
+  warmVoiceTranscriber() {
+    return ipcRenderer.invoke("voice:warmup");
+  },
+  transcribeVoice(samples, options) {
+    return ipcRenderer.invoke("voice:transcribe", { samples, options });
+  },
   getRuntimeInfo() {
     return ipcRenderer.invoke("app:get-runtime-info");
   },
@@ -28,6 +37,11 @@ contextBridge.exposeInMainWorld("adeDesktop", {
     const wrapped = (_event, payload) => listener(payload);
     ipcRenderer.on("terminal:exit", wrapped);
     return () => ipcRenderer.removeListener("terminal:exit", wrapped);
+  },
+  onVoiceStatus(listener) {
+    const wrapped = (_event, payload) => listener(payload);
+    ipcRenderer.on("voice:status", wrapped);
+    return () => ipcRenderer.removeListener("voice:status", wrapped);
   },
   pickDirectory() {
     return ipcRenderer.invoke("dialog:pick-directory");

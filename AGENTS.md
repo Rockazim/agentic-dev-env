@@ -9,33 +9,58 @@ ADE is an Electron desktop app that runs a grid of terminal panes per workspace.
 ## Architecture
 
 ```
-electron/           Electron main process (Node.js, CommonJS)
-  main.js           Window creation, IPC handlers, app lifecycle
-  preload.js        Context bridge — exposes adeDesktop API to renderer
-  terminal-manager.js  PTY spawning, shell profile detection, session management
+electron/                   Electron main process (Node.js, CommonJS)
+  main.js                   Window creation, IPC handlers, app lifecycle, permissions
+  preload.js                Context bridge — exposes adeDesktop API to renderer
+  terminal-manager.js       PTY spawning, shell profile detection, session management
+  voice-transcriber.js      Audio transcription via @huggingface/transformers
 
-backend/src/        Backend services (TypeScript, not yet wired into Electron)
-  contracts.ts      All types, interfaces, and port definitions
-  WorkspaceBackend.ts  Main orchestrator, in-memory store, stub services
-  platform.ts       OS detection, shell resolution, path helpers
+backend/src/                Backend services (TypeScript, not yet wired into Electron)
+  contracts.ts              All types, interfaces, and port definitions
+  WorkspaceBackend.ts       Main orchestrator, in-memory store, stub services
+  platform.ts               OS detection, shell resolution, path helpers
 
-index.html          UI shell — workspace tabs, grid, new-workspace dialog
-renderer.js         Frontend logic — workspace state, xterm instances, tab management
+scripts/
+  install-electron-pty.js   Postinstall script for node-pty rebuild
+
+index.html                  UI shell — workspace tabs, grid, new-workspace dialog, voice controls
+renderer.js                 Frontend logic — workspace state, xterm instances, tab management,
+                            per-pane profile selection, voice recording
 ```
 
 ## Key patterns
 
 - **Ports and adapters**: Backend services are defined as interfaces in `contracts.ts` and implemented as stubs in `WorkspaceBackend.ts`. Real implementations will replace the stubs.
-- **IPC bridge**: All communication between renderer and main process goes through `preload.js`. The renderer calls `window.adeDesktop.*` methods which map to `ipcMain.handle` in `main.js`.
+- **IPC bridge**: All communication between renderer and main process goes through `preload.js`. The renderer calls `window.adeDesktop.*` methods which map to `ipcMain.handle` in `main.js`. Fire-and-forget messages use `ipcRenderer.send` / `ipcMain.on` (e.g. `app:log`).
 - **No framework**: The frontend is vanilla JS with direct DOM manipulation. Do not introduce React, Vue, Svelte, or any UI framework unless explicitly asked.
 - **CommonJS in Electron**: `electron/` files use `require()`. Do not convert to ESM.
 - **ESM in renderer**: `renderer.js` uses `import` statements with explicit paths to node_modules.
+- **Per-pane profiles**: Each terminal pane has its own shell profile selector. Changing it kills the current PTY and spawns a new one with the selected profile.
+- **Voice pipeline**: Renderer records audio via MediaRecorder, sends raw samples to main process, `voice-transcriber.js` runs inference, result is typed into the active pane.
+
+## IPC channels
+
+| Channel | Type | Direction | Purpose |
+|---|---|---|---|
+| `terminal:list-profiles` | invoke | renderer → main | Get available shell profiles |
+| `terminal:create` | invoke | renderer → main | Spawn a PTY session |
+| `terminal:write` | invoke | renderer → main | Send keystrokes to PTY |
+| `terminal:resize` | invoke | renderer → main | Resize PTY |
+| `terminal:close` | invoke | renderer → main | Kill a PTY |
+| `terminal:data` | send | main → renderer | PTY stdout data |
+| `terminal:exit` | send | main → renderer | PTY process exited |
+| `dialog:pick-directory` | invoke | renderer → main | Open native folder picker |
+| `app:get-runtime-info` | invoke | renderer → main | App version, platform info |
+| `app:log` | send | renderer → main | Forward renderer logs to main console |
+| `voice:warmup` | invoke | renderer → main | Pre-load transcription model |
+| `voice:transcribe` | invoke | renderer → main | Transcribe audio samples |
+| `voice:status` | send | main → renderer | Voice backend status updates |
 
 ## Conventions
 
 - Use `const` over `let` when the binding is not reassigned.
 - Functions and variables: `camelCase`. Types and interfaces: `PascalCase`.
-- No semicolons are not a convention here — this codebase uses semicolons.
+- This codebase uses semicolons.
 - Keep files focused. If a file is doing two unrelated things, split it.
 - Terminal theme colors are defined once in `renderer.js` as `TERM_THEME`. Reference the CSS variables in `index.html` for UI colors.
 
@@ -54,8 +79,19 @@ renderer.js         Frontend logic — workspace state, xterm instances, tab man
 - Don't add bundlers (webpack, vite, esbuild) for the frontend.
 - Don't modify the xterm.js theme without checking it matches the CSS variables.
 - Don't use `nodeIntegration: true` — all Node access goes through the preload bridge.
-- Don't commit `CLAUDE.md`, `node_modules/`, `dist/`, or `out/`.
+- Don't commit `CLAUDE.md`, `.claude/`, `.codex`, `node_modules/`, `dist/`, or `out/`.
 - Don't add dependencies without a clear reason. This project stays lean.
+
+## Dependencies
+
+| Package | Purpose |
+|---|---|
+| `electron` | Desktop shell |
+| `@xterm/xterm` | Terminal rendering |
+| `@xterm/addon-fit` | Auto-resize terminals to container |
+| `@homebridge/node-pty-prebuilt-multiarch` | PTY spawning (prebuilt binaries) |
+| `@huggingface/transformers` | Local voice transcription |
+| `electron-builder` | Packaging (dev) |
 
 ## Testing
 

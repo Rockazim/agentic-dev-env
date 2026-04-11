@@ -4,7 +4,7 @@ const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 const { spawnSync } = require("node:child_process");
 
-const pty = require("node-pty");
+const pty = require("@homebridge/node-pty-prebuilt-multiarch");
 
 function isWSLEnvironment() {
   return (

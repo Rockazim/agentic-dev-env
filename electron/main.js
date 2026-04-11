@@ -1,12 +1,30 @@
 const os = require("node:os");
 const path = require("node:path");
 
-const { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, session, shell } = require("electron");
 const { TerminalManager } = require("./terminal-manager");
+const { VoiceTranscriber } = require("./voice-transcriber");
 
 const isMac = process.platform === "darwin";
 let mainWindow = null;
 let terminalManager = null;
+let voiceTranscriber = null;
+
+function formatDetails(details) {
+  if (details == null) {
+    return "";
+  }
+
+  if (typeof details === "string") {
+    return details;
+  }
+
+  try {
+    return JSON.stringify(details);
+  } catch {
+    return String(details);
+  }
+}
 
 if (process.platform === "win32") {
   app.setAppUserModelId("com.agenticdevenv.desktop");
@@ -56,10 +74,31 @@ function createMainWindow() {
     }
   });
 
+  voiceTranscriber = new VoiceTranscriber({
+    sendToRenderer(channel, payload) {
+      mainWindow?.webContents.send(channel, payload);
+    }
+  });
+
   return mainWindow;
 }
 
 app.whenReady().then(() => {
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    const allowed = permission === "media" || permission === "audioCapture";
+    console.log(`[permissions] request ${permission} -> ${allowed ? "allow" : "deny"}`);
+    callback(allowed);
+  });
+
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+    if (permission === "media" || permission === "audioCapture") {
+      console.log(`[permissions] check ${permission} -> allow`);
+      return true;
+    }
+
+    return false;
+  });
+
   if (!isMac) {
     Menu.setApplicationMenu(null);
   }
@@ -120,4 +159,20 @@ ipcMain.handle("dialog:pick-directory", async () => {
   }
 
   return result.filePaths[0];
+});
+
+ipcMain.handle("voice:warmup", async () => {
+  return voiceTranscriber.warmup();
+});
+
+ipcMain.handle("voice:transcribe", async (_event, payload) => {
+  return voiceTranscriber.transcribe(payload);
+});
+
+ipcMain.on("app:log", (_event, payload = {}) => {
+  const category = payload.category || "app";
+  const message = payload.message || "";
+  const details = formatDetails(payload.details);
+  const suffix = details ? ` ${details}` : "";
+  console.log(`[renderer:${category}] ${message}${suffix}`);
 });
