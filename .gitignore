@@ -5,6 +5,7 @@ out/
 
 # Local agent config — do not commit
 CLAUDE.md
+AGENTS.md
 .claude/
 .codex
 

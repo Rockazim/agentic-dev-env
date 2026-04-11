@@ -14,26 +14,26 @@ const GRID_LAYOUTS = {
 
 const TERM_THEME = {
   background: "#090d16",
-  foreground: "#d8deea",
-  cursor: "#d8deea",
+  foreground: "#e8ecf4",
+  cursor: "#e8ecf4",
   cursorAccent: "#090d16",
-  selectionBackground: "rgba(97,110,138,.32)",
+  selectionBackground: "rgba(120,140,175,.32)",
   black: "#090d16",
-  red: "#c04d5b",
-  green: "#2bc168",
-  yellow: "#cba95c",
-  blue: "#4fbad6",
-  magenta: "#8a4fe0",
-  cyan: "#4fbad6",
-  white: "#d8deea",
-  brightBlack: "#5e6878",
-  brightRed: "#dd6b79",
-  brightGreen: "#59d98a",
-  brightYellow: "#e0bf73",
-  brightBlue: "#72c9df",
-  brightMagenta: "#a171e8",
-  brightCyan: "#78d5e7",
-  brightWhite: "#eef2f8"
+  red: "#e06070",
+  green: "#45d88a",
+  yellow: "#e0c87a",
+  blue: "#6ac8e0",
+  magenta: "#a87af0",
+  cyan: "#6ac8e0",
+  white: "#e8ecf4",
+  brightBlack: "#7a8599",
+  brightRed: "#f08090",
+  brightGreen: "#70e8a8",
+  brightYellow: "#f0d890",
+  brightBlue: "#90d8f0",
+  brightMagenta: "#c0a0f8",
+  brightCyan: "#90e0f0",
+  brightWhite: "#f5f7fb"
 };
 
 // ── State ──────────────────────────────────────────
@@ -249,8 +249,7 @@ function normalizeTranscriptForLLM(text) {
     [/\bcolon\b/gi, ":"],
     [/\bsemicolon\b/gi, ";"],
     [/\bopen paren(?:thesis)?\b/gi, "("],
-    [/\bclose paren(?:thesis)?\b/gi, ")"],
-    [/\bnew line\b/gi, "\n"]
+    [/\bclose paren(?:thesis)?\b/gi, ")"]
   ];
 
   for (const [pattern, replacement] of replacements) {
@@ -263,9 +262,6 @@ function normalizeTranscriptForLLM(text) {
     .replace(/\s+([,.;:!?)\]])/g, "$1")
     .replace(/([(\[])\s+/g, "$1")
     .replace(/([,.;:!?])([^\s)\]}])/g, "$1 $2")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n[ \t]+/g, "\n")
     .replace(/[ \t]{2,}/g, " ")
     .trim();
 
@@ -963,12 +959,14 @@ voiceToggle.addEventListener("click", () => {
   toggleVoiceTyping();
 });
 
-voiceCleanToggle.addEventListener("click", () => {
-  voiceCleanupEnabled = !voiceCleanupEnabled;
-  saveVoiceCleanupPreference();
-  refreshVoiceCleanupToggle();
-  setVoiceStatus(voiceCleanupEnabled ? "cleanup on" : "cleanup off");
-});
+if (voiceCleanToggle) {
+  voiceCleanToggle.addEventListener("click", () => {
+    voiceCleanupEnabled = !voiceCleanupEnabled;
+    saveVoiceCleanupPreference();
+    refreshVoiceCleanupToggle();
+    logVoice("transcript cleanup toggled", { enabled: voiceCleanupEnabled });
+  });
+}
 
 window.addEventListener("keydown", event => {
   if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "v") {
