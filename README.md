@@ -13,7 +13,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-3b82f6?style=for-the-badge)](https://opensource.org/licenses/MIT)
 [![Electron](https://img.shields.io/badge/Electron_29-47848F?style=for-the-badge&logo=electron&logoColor=white)](https://electronjs.org)
-[![node-pty](https://img.shields.io/badge/node--pty-real%20PTY-1a1a2e?style=for-the-badge)](https://github.com/homebridge/node-pty-prebuilt-multiarch)
+[![node-pty](https://img.shields.io/badge/node--pty-real%20PTY-1a1a2e?style=for-the-badge)](https://github.com/homebridge/node-pty-prebuilt-multiarch#readme)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-22c55e?style=for-the-badge)](https://github.com/Rockazim/Agentic-Development-Environment/pulls)
 
 <br>
@@ -72,6 +72,18 @@ npm run dev
 > Requires **Node.js 18+**. The `postinstall` script handles native module rebuilds automatically.
 > If `npm install` fails, see [node-gyp prerequisites](https://github.com/nodejs/node-gyp#installation).
 
+### Prerequisites
+
+| | |
+|:--|:--|
+| **Node.js** | 18 or later |
+| **Windows** | Python 3 + Visual Studio Build Tools (for native modules) |
+| **macOS** | Xcode Command Line Tools (`xcode-select --install`) |
+| **Linux** | `build-essential` / `make` / `gcc` (distro equivalent) |
+
+> Native module rebuilds are handled automatically by the `postinstall` script.
+> If you already have a working `node-gyp` setup, no extra steps are needed.
+
 <br>
 
 ## Features
@@ -129,6 +141,9 @@ Automatically detects available shells. PowerShell, WSL, and cmd on Windows. zsh
 |:---------|:-------|
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> | Toggle voice typing |
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> | Add pane to current workspace |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Backspace</kbd> | Close the active pane |
+
+> On macOS, <kbd>Ctrl</kbd> is replaced by <kbd>Cmd</kbd>.
 
 All shortcuts are rebindable via the **keys** button in the toolbar.
 
@@ -217,7 +232,9 @@ renderer.js                 frontend — workspaces, terminals, hotkeys, voice
 | ✅ | Local voice transcription (Whisper via HF Transformers) |
 | ✅ | Customizable hotkeys with recording UI |
 | ✅ | Dynamic pane creation (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd>) |
+| ✅ | Close-pane hotkey (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Backspace</kbd>) |
 | ✅ | Native folder picker for workspace directory |
+| ✅ | IPC security hardening and Content Security Policy |
 | ⬜ | Git panel — branch, diffs, staging, commits |
 | ⬜ | Chat history persistence |
 | ⬜ | Pane resize and drag-to-rearrange |
@@ -240,11 +257,14 @@ npm run dist:win     # → Windows NSIS installer
 npm run dist:mac     # → macOS DMG
 ```
 
-## Releases
+<details>
+<summary><strong>Releases and versioning</strong></summary>
+
+<br>
 
 Desktop releases should be built from a clean checkout with the lockfile, not from an ad hoc local `npm install`.
 
-### Local Windows release
+#### Local Windows release
 
 Run the Windows build from PowerShell, not WSL:
 
@@ -255,7 +275,7 @@ npm run dist:win
 
 The packaged installer is written to `dist/`.
 
-### Versioning
+#### Versioning
 
 Use npm versioning so the app version, git tag, and packaged release stay aligned:
 
@@ -267,7 +287,7 @@ npm version patch
 
 That updates `package.json`, creates a version commit, and creates a git tag such as `v0.1.1`.
 
-### GitHub release flow
+#### GitHub release flow
 
 This repo includes:
 
@@ -282,13 +302,31 @@ Recommended release sequence:
 4. GitHub Actions builds the Windows installer from `npm ci`.
 5. The workflow uploads the build artifacts to the matching GitHub Release.
 
-### Security checklist
+</details>
+
+<details>
+<summary><strong>Security</strong></summary>
+
+<br>
+
+ADE follows Electron security best practices:
+
+- **Sandbox enabled** — renderer runs in a sandboxed process
+- **Context isolation** — no Node.js access from renderer code
+- **IPC hardening** — all handlers validate sender origin via `assertTrustedSender()`
+- **Content Security Policy** — strict CSP via meta tag (`default-src 'self'`, `object-src 'none'`, `frame-src 'none'`)
+- **Navigation blocked** — renderer cannot navigate away from the app
+- **External URLs filtered** — only `http`/`https` links open in the system browser
+
+#### Release security checklist
 
 - Keep `package-lock.json` committed and build releases with `npm ci`.
 - Review dependency bumps before merging them.
 - Prefer release builds from GitHub Actions instead of an everyday dev machine.
 - Code-sign public Windows installers before broad distribution.
 - Treat Electron security settings and preload IPC surface as release-critical code.
+
+</details>
 
 <br>
 
