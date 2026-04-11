@@ -50,9 +50,6 @@ jobs:
           name: ADE-windows-${{ github.ref_name }}
           path: |
             dist/*.exe
-            dist/*.yml
-            dist/*.blockmap
-            dist/*.zip
           if-no-files-found: error
 
       - name: Create or update GitHub Release
@@ -68,7 +65,7 @@ jobs:
           fi
 
           shopt -s nullglob
-          files=(dist/*.exe dist/*.yml dist/*.blockmap dist/*.zip)
+          files=(dist/*.exe)
 
           if [[ ${#files[@]} -eq 0 ]]; then
             echo "::error::No release files were found in dist/"
