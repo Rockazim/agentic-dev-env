@@ -1,11 +1,14 @@
 const os = require("node:os");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 
 const { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, session, shell } = require("electron");
 const { TerminalManager } = require("./terminal-manager");
 const { VoiceTranscriber } = require("./voice-transcriber");
 
 const isMac = process.platform === "darwin";
+const rendererEntryPath = path.join(__dirname, "..", "index.html");
+const rendererEntryUrl = pathToFileURL(rendererEntryPath).href;
 let mainWindow = null;
 let terminalManager = null;
 let voiceTranscriber = null;
@@ -32,6 +35,20 @@ if (process.platform === "win32") {
 
 nativeTheme.themeSource = "dark";
 
+function isTrustedRendererUrl(url) {
+  return url === rendererEntryUrl;
+}
+
+function isTrustedSender(senderFrame) {
+  return isTrustedRendererUrl(senderFrame?.url || "");
+}
+
+function assertTrustedSender(senderFrame) {
+  if (!isTrustedSender(senderFrame)) {
+    throw new Error(`Blocked IPC from untrusted renderer: ${senderFrame?.url || "unknown"}`);
+  }
+}
+
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1680,
@@ -45,14 +62,27 @@ function createMainWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: true
     }
   });
 
-  mainWindow.loadFile(path.join(__dirname, "..", "index.html"));
+  mainWindow.loadFile(rendererEntryPath);
+
+  mainWindow.webContents.on("will-navigate", event => {
+    event.preventDefault();
+  });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    try {
+      const parsed = new URL(url);
+
+      if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+        shell.openExternal(url);
+      }
+    } catch {
+      // Ignore malformed URLs and deny the window creation below.
+    }
+
     return { action: "deny" };
   });
 
@@ -84,14 +114,19 @@ function createMainWindow() {
 }
 
 app.whenReady().then(() => {
-  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    const allowed = permission === "media" || permission === "audioCapture";
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    const allowed =
+      isTrustedRendererUrl(webContents.getURL()) &&
+      (permission === "media" || permission === "audioCapture");
     console.log(`[permissions] request ${permission} -> ${allowed ? "allow" : "deny"}`);
     callback(allowed);
   });
 
-  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
-    if (permission === "media" || permission === "audioCapture") {
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+    if (
+      isTrustedRendererUrl(webContents.getURL()) &&
+      (permission === "media" || permission === "audioCapture")
+    ) {
       console.log(`[permissions] check ${permission} -> allow`);
       return true;
     }
@@ -128,27 +163,33 @@ ipcMain.handle("app:get-runtime-info", () => {
   };
 });
 
-ipcMain.handle("terminal:list-profiles", () => {
+ipcMain.handle("terminal:list-profiles", event => {
+  assertTrustedSender(event.senderFrame);
   return terminalManager?.listProfiles() || [];
 });
 
-ipcMain.handle("terminal:create", (_event, options) => {
+ipcMain.handle("terminal:create", (event, options) => {
+  assertTrustedSender(event.senderFrame);
   return terminalManager.createSession(options);
 });
 
-ipcMain.handle("terminal:write", (_event, payload) => {
+ipcMain.handle("terminal:write", (event, payload) => {
+  assertTrustedSender(event.senderFrame);
   terminalManager.write(payload.id, payload.data);
 });
 
-ipcMain.handle("terminal:resize", (_event, payload) => {
+ipcMain.handle("terminal:resize", (event, payload) => {
+  assertTrustedSender(event.senderFrame);
   terminalManager.resize(payload.id, payload.cols, payload.rows);
 });
 
-ipcMain.handle("terminal:close", (_event, payload) => {
+ipcMain.handle("terminal:close", (event, payload) => {
+  assertTrustedSender(event.senderFrame);
   terminalManager.close(payload.id);
 });
 
-ipcMain.handle("dialog:pick-directory", async () => {
+ipcMain.handle("dialog:pick-directory", async event => {
+  assertTrustedSender(event.senderFrame);
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ["openDirectory"],
     title: "Choose workspace directory"
@@ -161,15 +202,21 @@ ipcMain.handle("dialog:pick-directory", async () => {
   return result.filePaths[0];
 });
 
-ipcMain.handle("voice:warmup", async () => {
+ipcMain.handle("voice:warmup", async event => {
+  assertTrustedSender(event.senderFrame);
   return voiceTranscriber.warmup();
 });
 
-ipcMain.handle("voice:transcribe", async (_event, payload) => {
+ipcMain.handle("voice:transcribe", async (event, payload) => {
+  assertTrustedSender(event.senderFrame);
   return voiceTranscriber.transcribe(payload);
 });
 
-ipcMain.on("app:log", (_event, payload = {}) => {
+ipcMain.on("app:log", (event, payload = {}) => {
+  if (!isTrustedSender(event.senderFrame)) {
+    return;
+  }
+
   const category = payload.category || "app";
   const message = payload.message || "";
   const details = formatDetails(payload.details);

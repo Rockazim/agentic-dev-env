@@ -1594,6 +1594,16 @@ window.addEventListener("keydown", event => {
 
     event.preventDefault();
     void addPaneToActiveWorkspace();
+    return;
+  }
+
+  if (hotkeyMatchesEvent(getHotkeyBinding("removePane"), event)) {
+    if (shouldBlockBindingForFocus(getHotkeyBinding("removePane"), event)) {
+      return;
+    }
+
+    event.preventDefault();
+    removeActivePaneFromWorkspace();
   }
 });
 

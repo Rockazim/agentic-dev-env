@@ -240,6 +240,56 @@ npm run dist:win     # → Windows NSIS installer
 npm run dist:mac     # → macOS DMG
 ```
 
+## Releases
+
+Desktop releases should be built from a clean checkout with the lockfile, not from an ad hoc local `npm install`.
+
+### Local Windows release
+
+Run the Windows build from PowerShell, not WSL:
+
+```powershell
+npm ci
+npm run dist:win
+```
+
+The packaged installer is written to `dist/`.
+
+### Versioning
+
+Use npm versioning so the app version, git tag, and packaged release stay aligned:
+
+```bash
+npm version patch
+# or: npm version minor
+# or: npm version major
+```
+
+That updates `package.json`, creates a version commit, and creates a git tag such as `v0.1.1`.
+
+### GitHub release flow
+
+This repo includes:
+
+- `/.github/workflows/release.yml` for tag-driven Windows release builds
+- `/.github/dependabot.yml` for weekly npm and GitHub Actions dependency checks
+
+Recommended release sequence:
+
+1. Merge the changes you want to ship.
+2. Run `npm version patch|minor|major`.
+3. Push the commit and tag: `git push && git push --tags`.
+4. GitHub Actions builds the Windows installer from `npm ci`.
+5. The workflow uploads the build artifacts to the matching GitHub Release.
+
+### Security checklist
+
+- Keep `package-lock.json` committed and build releases with `npm ci`.
+- Review dependency bumps before merging them.
+- Prefer release builds from GitHub Actions instead of an everyday dev machine.
+- Code-sign public Windows installers before broad distribution.
+- Treat Electron security settings and preload IPC surface as release-critical code.
+
 <br>
 
 ---
