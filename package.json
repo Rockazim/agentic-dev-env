@@ -27,6 +27,11 @@
     "directories": {
       "output": "dist"
     },
+    "nsis": {
+      "allowToChangeInstallationDirectory": true,
+      "oneClick": false,
+      "perMachine": false
+    },
     "win": {
       "target": [
         "nsis"
