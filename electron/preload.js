@@ -38,6 +38,16 @@ contextBridge.exposeInMainWorld("adeDesktop", {
     ipcRenderer.on("terminal:exit", wrapped);
     return () => ipcRenderer.removeListener("terminal:exit", wrapped);
   },
+  onCycleWorkspaceNext(listener) {
+    const wrapped = () => listener();
+    ipcRenderer.on("workspace:cycle-next", wrapped);
+    return () => ipcRenderer.removeListener("workspace:cycle-next", wrapped);
+  },
+  onOpenTerminalSearch(listener) {
+    const wrapped = () => listener();
+    ipcRenderer.on("terminal:open-search", wrapped);
+    return () => ipcRenderer.removeListener("terminal:open-search", wrapped);
+  },
   onVoiceStatus(listener) {
     const wrapped = (_event, payload) => listener(payload);
     ipcRenderer.on("voice:status", wrapped);
@@ -45,5 +55,8 @@ contextBridge.exposeInMainWorld("adeDesktop", {
   },
   pickDirectory() {
     return ipcRenderer.invoke("dialog:pick-directory");
+  },
+  setReservedHotkeys(payload) {
+    return ipcRenderer.invoke("hotkeys:set-reserved", payload);
   }
 });

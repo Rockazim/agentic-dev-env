@@ -238,13 +238,15 @@ class TerminalManager {
     const id = randomUUID();
 
     const shell = pty.spawn(launch.executable, launch.args, {
-      name: process.platform === "win32" ? "xterm-color" : "xterm-256color",
+      name: "xterm-256color",
       cols: options.cols || 120,
       rows: options.rows || 32,
       cwd: launch.spawnCwd,
       env: {
         ...process.env,
-        TERM_PROGRAM: "ADE"
+        TERM: "xterm-256color",
+        COLORTERM: "truecolor",
+        ...launch.env
       },
       useConpty: process.platform === "win32"
     });

@@ -1,9 +1,12 @@
+const fs = require("node:fs");
+
 const MODEL_ID = "Xenova/whisper-tiny.en";
 
 class VoiceTranscriber {
-  constructor({ sendToRenderer }) {
+  constructor({ sendToRenderer, cacheDir = null }) {
     this._sendToRenderer = sendToRenderer;
     this._transcriberPromise = null;
+    this._cacheDir = cacheDir;
   }
 
   async warmup() {
@@ -55,10 +58,24 @@ class VoiceTranscriber {
   }
 
   async _loadTranscriber() {
-    this._emitStatus("loading-model", { modelId: MODEL_ID });
+    this._emitStatus("loading-model", {
+      modelId: MODEL_ID,
+      cacheDir: this._cacheDir
+    });
 
-    const { pipeline } = await import("@huggingface/transformers");
+    const { env, pipeline, LogLevel } = await import("@huggingface/transformers");
+
+    if (this._cacheDir) {
+      fs.mkdirSync(this._cacheDir, { recursive: true });
+      env.cacheDir = this._cacheDir;
+    }
+
+    env.allowRemoteModels = true;
+    env.useFSCache = true;
+    env.logLevel = LogLevel.INFO;
+
     const transcriber = await pipeline("automatic-speech-recognition", MODEL_ID, {
+      cache_dir: this._cacheDir,
       progress_callback: progress => {
         this._emitStatus("loading-progress", progress);
       }

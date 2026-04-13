@@ -162,6 +162,46 @@ button{font:inherit;color:inherit}
   background:#0d111a;
   color:var(--text);
 }
+.pane-search{
+  display:none;
+  align-items:center;
+  gap:6px;
+  padding:6px 8px;
+  border-bottom:1px solid #121722;
+  background:rgba(13,16,23,.98);
+}
+.pane-search.open{display:flex}
+.pane-search-input{
+  flex:1;
+  min-width:0;
+  border:1px solid var(--line);
+  background:#0a0e16;
+  color:var(--text);
+  padding:4px 6px;
+  border-radius:4px;
+  font-family:inherit;
+  font-size:11px;
+  outline:none;
+}
+.pane-search-input:focus{border-color:var(--line-2)}
+.pane-search-count{
+  min-width:40px;
+  text-align:center;
+  font-size:10px;
+  color:var(--muted-2);
+}
+.pane-search-btn{
+  border:1px solid var(--line);
+  background:#141a26;
+  color:var(--muted);
+  border-radius:4px;
+  padding:4px 8px;
+  cursor:pointer;
+  font-family:inherit;
+  font-size:10px;
+  line-height:1;
+}
+.pane-search-btn:hover{color:var(--text);border-color:var(--line-2)}
 .terminal-host{
   flex:1;
   min-height:0;
@@ -171,8 +211,14 @@ button{font:inherit;color:inherit}
 .terminal-host .xterm{
   height:100%;
 }
+/* xterm.js v6 still creates a legacy empty .xterm-viewport div (position:absolute,
+   overflow-y:scroll) as a sibling of the new .xterm-scrollable-element wrapper.
+   It has no content, but because it is absolutely positioned to fill the terminal
+   host and is a CSS scroll container, it can capture or divert wheel events
+   before they reach the real scrollable wrapper. Neutralize it for pointer input. */
 .terminal-host .xterm-viewport{
   background:transparent !important;
+  pointer-events:none !important;
 }
 .empty-state{
   height:100%;

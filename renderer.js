@@ -1,5 +1,6 @@
 import { Terminal } from "./node_modules/@xterm/xterm/lib/xterm.mjs";
 import { FitAddon } from "./node_modules/@xterm/addon-fit/lib/addon-fit.mjs";
+import { SearchAddon } from "./node_modules/@xterm/addon-search/lib/addon-search.mjs";
 
 const TONES = ["green", "cyan", "orange", "purple", "red"];
 const VOICE_CLEANUP_STORAGE_KEY = "ade.voiceCleanupEnabled";
@@ -11,6 +12,16 @@ const HOTKEY_ACTIONS = {
     label: "voice transcription",
     description: "Start or stop push-to-talk transcription for the active pane.",
     defaultBinding: { code: "KeyV", primary: true, alt: false, shift: true }
+  },
+  findTerminal: {
+    label: "find terminal",
+    description: "Search within the active terminal pane.",
+    defaultBinding: { code: "KeyF", primary: true, alt: false, shift: false }
+  },
+  nextWorkspace: {
+    label: "next workspace",
+    description: "Switch to the next workspace tab.",
+    defaultBinding: { code: "Tab", primary: true, alt: false, shift: false }
   },
   addPane: {
     label: "add pane",
@@ -54,6 +65,14 @@ const TERM_THEME = {
   brightMagenta: "#c0a0f8",
   brightCyan: "#90e0f0",
   brightWhite: "#f5f7fb"
+};
+const SEARCH_DECORATIONS = {
+  matchBackground: "#223050",
+  matchBorder: "#31527a",
+  matchOverviewRuler: "#31527a",
+  activeMatchBackground: "#4a2b0d",
+  activeMatchBorder: "#d06a1f",
+  activeMatchColorOverviewRuler: "#d06a1f"
 };
 
 // ── State ──────────────────────────────────────────
@@ -107,17 +126,77 @@ const hotkeysClose = document.getElementById("hotkeys-close");
 
 function createTermInstance() {
   const term = new Terminal({
+    // SearchAddon relies on terminal decorations, which require proposed API opt-in.
+    allowProposedApi: true,
     fontFamily: '"SFMono-Regular","Cascadia Mono","JetBrains Mono","Menlo","Consolas",monospace',
     fontSize: 12,
     lineHeight: 1.2,
     cursorBlink: true,
     allowTransparency: true,
+    scrollback: 10000,
+    windowsPty: getWindowsPtyOptions(),
     theme: TERM_THEME
   });
 
   const fitAddon = new FitAddon();
   term.loadAddon(fitAddon);
   return { term, fitAddon };
+}
+
+function getWindowsPtyOptions() {
+  if (runtimeInfo?.platform !== "win32") {
+    return undefined;
+  }
+
+  const buildNumber = Number.parseInt(runtimeInfo?.osRelease?.split(".").at(-1) || "", 10);
+
+  return {
+    backend: "conpty",
+    buildNumber: Number.isFinite(buildNumber) ? buildNumber : undefined
+  };
+}
+
+function terminalMouseModeCapturesWheel(term) {
+  return ["vt200", "drag", "any"].includes(term.modes.mouseTrackingMode);
+}
+
+function getWheelScrollLineCount(event) {
+  if (!event.deltaY) {
+    return 0;
+  }
+
+  const wheelLineHeight =
+    event.deltaMode === WheelEvent.DOM_DELTA_LINE
+      ? 1
+      : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+        ? 12
+        : 40;
+  const rawAmount = event.deltaY / wheelLineHeight;
+  const magnitude = Math.max(1, Math.round(Math.abs(rawAmount)));
+  return magnitude * Math.sign(rawAmount);
+}
+
+function installTerminalWheelScroll(pane) {
+  const { term } = pane;
+
+  term.attachCustomWheelEventHandler(event => {
+    const buffer = term.buffer.active;
+    const hasNormalScrollback = buffer.type === "normal" && buffer.baseY > 0;
+    const lineCount = getWheelScrollLineCount(event);
+
+    if (!lineCount) {
+      return true;
+    }
+
+    if (hasNormalScrollback && terminalMouseModeCapturesWheel(term)) {
+      event.preventDefault();
+      event.stopPropagation();
+      term.scrollLines(lineCount);
+      return false;
+    }
+
+    return true;
+  });
 }
 
 function getProfileById(profileId) {
@@ -322,10 +401,31 @@ function saveHotkeys() {
   } catch {
     // Ignore localStorage failures in restricted runtimes.
   }
+
+  void syncReservedHotkeys();
 }
 
 function getHotkeyBinding(actionId) {
   return hotkeys[actionId] ?? cloneBinding(HOTKEY_ACTIONS[actionId]?.defaultBinding) ?? null;
+}
+
+function isReservedHotkeyEligible(binding) {
+  return Boolean(binding) && (binding.primary || binding.alt);
+}
+
+function syncReservedHotkeys() {
+  if (!window.adeDesktop?.setReservedHotkeys) {
+    return Promise.resolve();
+  }
+
+  return window.adeDesktop.setReservedHotkeys({
+    nextWorkspace: isReservedHotkeyEligible(getHotkeyBinding("nextWorkspace"))
+      ? getHotkeyBinding("nextWorkspace")
+      : null,
+    findTerminal: isReservedHotkeyEligible(getHotkeyBinding("findTerminal"))
+      ? getHotkeyBinding("findTerminal")
+      : null
+  });
 }
 
 function getPrimaryModifierLabel() {
@@ -518,6 +618,127 @@ function refreshHotkeyUi() {
   }
 }
 
+function updatePaneSearchResults(pane, results = null) {
+  if (!pane?.searchCountEl) {
+    return;
+  }
+
+  if (!pane.searchInput?.value) {
+    pane.searchCountEl.textContent = "";
+    return;
+  }
+
+  if (!results || !results.resultCount) {
+    pane.searchCountEl.textContent = "0/0";
+    return;
+  }
+
+  if (results.resultIndex >= 0) {
+    pane.searchCountEl.textContent = `${results.resultIndex + 1}/${results.resultCount}`;
+    return;
+  }
+
+  pane.searchCountEl.textContent = `${results.resultCount}+`;
+}
+
+function runPaneSearch(pane, direction = "next", { incremental = false } = {}) {
+  if (!pane?.searchAddon || !pane.searchInput) {
+    return false;
+  }
+
+  const term = pane.searchInput.value;
+
+  if (!term) {
+    pane.searchAddon.clearDecorations();
+    updatePaneSearchResults(pane);
+    return false;
+  }
+
+  const searchOptions = {
+    incremental: direction === "next" ? incremental : false,
+    decorations: SEARCH_DECORATIONS
+  };
+
+  try {
+    return direction === "previous"
+      ? pane.searchAddon.findPrevious(term, searchOptions)
+      : pane.searchAddon.findNext(term, searchOptions);
+  } catch (error) {
+    logApp("terminal-search", "search failed", {
+      message: error?.message || String(error),
+      direction,
+      term
+    });
+    pane.searchCountEl.textContent = "err";
+    return false;
+  }
+}
+
+function closePaneSearch(pane, { focusTerminal = true } = {}) {
+  if (!pane?.searchEl) {
+    return;
+  }
+
+  pane.searchEl.classList.remove("open");
+  pane.searchAddon?.clearDecorations();
+  updatePaneSearchResults(pane);
+
+  if (focusTerminal) {
+    setActivePane(pane);
+  }
+}
+
+function openPaneSearch(pane) {
+  if (!pane?.searchEl || !pane.searchInput) {
+    return false;
+  }
+
+  pane.searchEl.classList.add("open");
+  setActivePane(pane, { focusTerminal: false });
+
+  if (pane.searchInput.value) {
+    runPaneSearch(pane, "next", { incremental: true });
+  } else {
+    updatePaneSearchResults(pane);
+  }
+
+  requestAnimationFrame(() => {
+    pane.searchInput.focus();
+    pane.searchInput.select();
+  });
+
+  return true;
+}
+
+function openActivePaneSearch() {
+  const activePane = getActivePaneRecord();
+  const pane = activePane || getActiveWorkspace()?.panes[0] || null;
+
+  if (!pane) {
+    return false;
+  }
+
+  return openPaneSearch(pane);
+}
+
+function installTerminalSearchHotkey(term, pane) {
+  term.attachCustomKeyEventHandler(event => {
+    if (event.type !== "keydown" || dialog.classList.contains("open") || hotkeysDialog?.classList.contains("open")) {
+      return true;
+    }
+
+    const binding = getHotkeyBinding("findTerminal");
+
+    if (!hotkeyMatchesEvent(binding, event) || shouldBlockBindingForFocus(binding, event)) {
+      return true;
+    }
+
+    event.preventDefault();
+    openPaneSearch(pane);
+    return false;
+  });
+}
+
 function loadVoiceCleanupPreference() {
   try {
     const saved = window.localStorage.getItem(VOICE_CLEANUP_STORAGE_KEY);
@@ -644,6 +865,9 @@ function refreshVoiceToggle() {
     voiceStatus.classList.contains("unsupported") &&
     !voiceStatus.textContent.startsWith("typed:");
   const voiceShortcutLabel = getHotkeyLabel("voiceToggle");
+  const waitingForModel =
+    !voiceBackendReady &&
+    voiceStatus.textContent.startsWith("loading voice");
 
   if (voiceTranscribing) {
     voiceToggle.textContent = "wait";
@@ -661,7 +885,7 @@ function refreshVoiceToggle() {
 
   voiceToggle.textContent = "mic";
   voiceToggle.title = `Start push-to-talk recording (${voiceShortcutLabel})`;
-  voiceToggle.disabled = !voiceAvailable || unsupported;
+  voiceToggle.disabled = !voiceAvailable || unsupported || waitingForModel;
 }
 
 function logApp(category, message, details) {
@@ -1067,15 +1291,21 @@ async function switchPaneProfile(pane, profileId) {
 async function createWorkspacePane(ws, { cwd = ws.cwd, profileId = ws.profileId } = {}) {
   const startingProfileId = getProfileById(profileId)?.id || ws.profileId || defaultProfileId || profiles[0]?.id || null;
   const { term, fitAddon } = createTermInstance();
+  const searchAddon = new SearchAddon();
   const pane = {
     paneEl: document.createElement("section"),
     term,
     fitAddon,
+    searchAddon,
+    searchResultsDisposable: null,
     resizeObserver: null,
     sessionId: null,
     host: null,
     pathEl: null,
     runtimeSelect: null,
+    searchEl: null,
+    searchInput: null,
+    searchCountEl: null,
     cwd,
     profileId: startingProfileId,
     suppressedExitId: null
@@ -1090,12 +1320,22 @@ async function createWorkspacePane(ws, { cwd = ws.cwd, profileId = ws.profileId 
         <select class="pane-profile-select" aria-label="terminal shell"></select>
       </div>
     </div>
+    <div class="pane-search">
+      <input class="pane-search-input" type="text" placeholder="find in terminal" spellcheck="false">
+      <span class="pane-search-count"></span>
+      <button class="pane-search-btn" type="button" data-search-nav="previous" title="previous match">prev</button>
+      <button class="pane-search-btn" type="button" data-search-nav="next" title="next match">next</button>
+      <button class="pane-search-btn" type="button" data-search-close title="close search">done</button>
+    </div>
     <div class="terminal-host"></div>
   `;
 
   pane.host = pane.paneEl.querySelector(".terminal-host");
   pane.pathEl = pane.paneEl.querySelector(".pane-path");
   pane.runtimeSelect = pane.paneEl.querySelector(".pane-profile-select");
+  pane.searchEl = pane.paneEl.querySelector(".pane-search");
+  pane.searchInput = pane.paneEl.querySelector(".pane-search-input");
+  pane.searchCountEl = pane.paneEl.querySelector(".pane-search-count");
   pane.runtimeSelect.innerHTML = buildProfileOptions(startingProfileId);
   pane.runtimeSelect.addEventListener("mousedown", () => {
     setActivePane(pane, { focusTerminal: false });
@@ -1107,6 +1347,48 @@ async function createWorkspacePane(ws, { cwd = ws.cwd, profileId = ws.profileId 
     switchPaneProfile(pane, pane.runtimeSelect.value);
   });
   term.open(pane.host);
+  term.loadAddon(searchAddon);
+  installTerminalWheelScroll(pane);
+  installTerminalSearchHotkey(term, pane);
+
+  pane.searchResultsDisposable = searchAddon.onDidChangeResults(results => {
+    updatePaneSearchResults(pane, results);
+  });
+  pane.searchEl.addEventListener("mousedown", () => {
+    setActivePane(pane, { focusTerminal: false });
+  });
+  pane.searchEl.addEventListener("click", event => {
+    event.stopPropagation();
+  });
+  pane.searchInput.addEventListener("focus", () => {
+    setActivePane(pane, { focusTerminal: false });
+  });
+  pane.searchInput.addEventListener("input", () => {
+    runPaneSearch(pane, "next", { incremental: true });
+  });
+  pane.searchInput.addEventListener("keydown", event => {
+    event.stopPropagation();
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closePaneSearch(pane);
+      return;
+    }
+
+    if (event.key === "Enter") {
+      event.preventDefault();
+      runPaneSearch(pane, event.shiftKey ? "previous" : "next");
+    }
+  });
+  pane.searchEl.querySelector('[data-search-nav="previous"]')?.addEventListener("click", () => {
+    runPaneSearch(pane, "previous");
+  });
+  pane.searchEl.querySelector('[data-search-nav="next"]')?.addEventListener("click", () => {
+    runPaneSearch(pane, "next");
+  });
+  pane.searchEl.querySelector("[data-search-close]")?.addEventListener("click", () => {
+    closePaneSearch(pane);
+  });
 
   term.onData(data => {
     if (pane.sessionId) {
@@ -1122,7 +1404,7 @@ async function createWorkspacePane(ws, { cwd = ws.cwd, profileId = ws.profileId 
   });
 
   pane.paneEl.addEventListener("click", event => {
-    if (event.target.closest(".pane-runtime")) {
+    if (event.target.closest(".pane-runtime, .pane-search")) {
       setActivePane(pane, { focusTerminal: false });
       return;
     }
@@ -1216,6 +1498,7 @@ function destroyPane(pane) {
   }
 
   pane.resizeObserver.disconnect();
+  pane.searchResultsDisposable?.dispose?.();
   pane.term.dispose();
 
   if (pane.sessionId) {
@@ -1277,6 +1560,27 @@ function switchToWorkspace(id, { focusPane = null } = {}) {
   }
 
   renderWorkspaceGrid(ws, focusPane);
+}
+
+function cycleWorkspace() {
+  if (!workspaces.length) {
+    return false;
+  }
+
+  const currentIndex = workspaces.findIndex(workspace => workspace.id === activeWorkspaceId);
+
+  if (currentIndex === -1) {
+    switchToWorkspace(workspaces[0].id);
+    return true;
+  }
+
+  if (workspaces.length === 1) {
+    return false;
+  }
+
+  const nextIndex = (currentIndex + 1) % workspaces.length;
+  switchToWorkspace(workspaces[nextIndex].id);
+  return true;
 }
 
 function closeWorkspace(id) {
@@ -1591,6 +1895,26 @@ window.addEventListener("keydown", event => {
     return;
   }
 
+  if (hotkeyMatchesEvent(getHotkeyBinding("findTerminal"), event)) {
+    if (shouldBlockBindingForFocus(getHotkeyBinding("findTerminal"), event)) {
+      return;
+    }
+
+    event.preventDefault();
+    openActivePaneSearch();
+    return;
+  }
+
+  if (hotkeyMatchesEvent(getHotkeyBinding("nextWorkspace"), event)) {
+    if (shouldBlockBindingForFocus(getHotkeyBinding("nextWorkspace"), event)) {
+      return;
+    }
+
+    event.preventDefault();
+    cycleWorkspace();
+    return;
+  }
+
   if (hotkeyMatchesEvent(getHotkeyBinding("voiceToggle"), event)) {
     if (shouldBlockBindingForFocus(getHotkeyBinding("voiceToggle"), event)) {
       return;
@@ -1653,6 +1977,22 @@ window.adeDesktop.onTerminalExit(({ id, exitCode }) => {
   }
 });
 
+window.adeDesktop.onCycleWorkspaceNext(() => {
+  if (dialog.classList.contains("open") || hotkeysDialog?.classList.contains("open")) {
+    return;
+  }
+
+  cycleWorkspace();
+});
+
+window.adeDesktop.onOpenTerminalSearch(() => {
+  if (dialog.classList.contains("open") || hotkeysDialog?.classList.contains("open")) {
+    return;
+  }
+
+  openActivePaneSearch();
+});
+
 window.adeDesktop.onVoiceStatus(({ status, details }) => {
   logVoice(`backend ${status}`, details);
 
@@ -1663,7 +2003,7 @@ window.adeDesktop.onVoiceStatus(({ status, details }) => {
 
   if (status === "loading-progress" && !voiceRecording && !voiceTranscribing) {
     const percent =
-      typeof details?.progress === "number" ? Math.round(details.progress * 100) : null;
+      typeof details?.progress === "number" ? Math.round(details.progress) : null;
     setVoiceStatus(percent != null ? `loading voice ${percent}%` : "loading voice model…");
     return;
   }
@@ -1674,6 +2014,13 @@ window.adeDesktop.onVoiceStatus(({ status, details }) => {
     if (!voiceRecording && !voiceTranscribing && !voiceLastErrorState) {
       setVoiceIdleStatus();
     }
+    return;
+  }
+
+  if (status === "error") {
+    voiceBackendReady = false;
+    const message = details?.message ? `voice error: ${details.message}` : "voice model failed";
+    setVoiceStatus(message, "unsupported");
   }
 });
 
@@ -1705,6 +2052,7 @@ async function init() {
   runtimeInfo = await window.adeDesktop.getRuntimeInfo();
   profiles = await window.adeDesktop.listProfiles();
   defaultProfileId = chooseDefaultProfileId();
+  await syncReservedHotkeys();
   setHotkeysHelp();
   renderHotkeyList();
   refreshHotkeyUi();

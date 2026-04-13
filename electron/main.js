@@ -12,6 +12,20 @@ const rendererEntryUrl = pathToFileURL(rendererEntryPath).href;
 let mainWindow = null;
 let terminalManager = null;
 let voiceTranscriber = null;
+let reservedHotkeys = {
+  nextWorkspace: {
+    code: "Tab",
+    primary: true,
+    alt: false,
+    shift: false
+  },
+  findTerminal: {
+    code: "KeyF",
+    primary: true,
+    alt: false,
+    shift: false
+  }
+};
 
 function formatDetails(details) {
   if (details == null) {
@@ -49,6 +63,43 @@ function assertTrustedSender(senderFrame) {
   }
 }
 
+function normalizeReservedHotkey(binding) {
+  if (binding == null) {
+    return null;
+  }
+
+  if (typeof binding !== "object" || typeof binding.code !== "string" || !binding.code) {
+    return null;
+  }
+
+  return {
+    code: binding.code,
+    primary: Boolean(binding.primary),
+    alt: Boolean(binding.alt),
+    shift: Boolean(binding.shift)
+  };
+}
+
+function syncReservedHotkeys(payload = {}) {
+  reservedHotkeys = {
+    nextWorkspace: normalizeReservedHotkey(payload.nextWorkspace),
+    findTerminal: normalizeReservedHotkey(payload.findTerminal)
+  };
+}
+
+function matchesReservedHotkey(binding, input) {
+  if (!binding || input.type !== "keyDown" || input.isAutoRepeat || input.code !== binding.code) {
+    return false;
+  }
+
+  const primaryPressed = Boolean(input.control || input.meta);
+  return (
+    primaryPressed === binding.primary &&
+    Boolean(input.alt) === binding.alt &&
+    Boolean(input.shift) === binding.shift
+  );
+}
+
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1680,
@@ -70,6 +121,40 @@ function createMainWindow() {
 
   mainWindow.webContents.on("will-navigate", event => {
     event.preventDefault();
+  });
+
+  // Catch browser-reserved shortcuts before Chromium consumes them.
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    if (matchesReservedHotkey(reservedHotkeys.nextWorkspace, input)) {
+      event.preventDefault();
+      mainWindow?.webContents.send("workspace:cycle-next");
+      return;
+    }
+
+    if (matchesReservedHotkey(reservedHotkeys.findTerminal, input)) {
+      event.preventDefault();
+      mainWindow?.webContents.send("terminal:open-search");
+      return;
+    }
+
+    // DevTools toggle — the application menu is suppressed on non-Mac, which
+    // removes the default Ctrl+Shift+I accelerator. Re-add it here so we can
+    // inspect the renderer during development.
+    if (
+      input.type === "keyDown" &&
+      input.key === "I" &&
+      input.shift &&
+      (isMac ? input.meta && input.alt : input.control)
+    ) {
+      event.preventDefault();
+      mainWindow?.webContents.toggleDevTools();
+      return;
+    }
+
+    if (input.type === "keyDown" && input.key === "F12") {
+      event.preventDefault();
+      mainWindow?.webContents.toggleDevTools();
+    }
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -105,6 +190,7 @@ function createMainWindow() {
   });
 
   voiceTranscriber = new VoiceTranscriber({
+    cacheDir: path.join(app.getPath("userData"), "voice-model-cache"),
     sendToRenderer(channel, payload) {
       mainWindow?.webContents.send(channel, payload);
     }
@@ -200,6 +286,11 @@ ipcMain.handle("dialog:pick-directory", async event => {
   }
 
   return result.filePaths[0];
+});
+
+ipcMain.handle("hotkeys:set-reserved", (event, payload) => {
+  assertTrustedSender(event.senderFrame);
+  syncReservedHotkeys(payload);
 });
 
 ipcMain.handle("voice:warmup", async event => {
