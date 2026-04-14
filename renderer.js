@@ -134,6 +134,7 @@ function createTermInstance() {
     cursorBlink: true,
     allowTransparency: true,
     scrollback: 10000,
+    rightClickSelectsWord: false,
     windowsPty: getWindowsPtyOptions(),
     theme: TERM_THEME
   });

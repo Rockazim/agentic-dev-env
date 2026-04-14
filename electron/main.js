@@ -100,6 +100,31 @@ function matchesReservedHotkey(binding, input) {
   );
 }
 
+function showContextMenu(params) {
+  const canCopy = Boolean(params.selectionText) || Boolean(params.editFlags?.canCopy);
+  const canPaste = Boolean(params.isEditable && params.editFlags?.canPaste);
+
+  if (!canCopy && !canPaste) {
+    return;
+  }
+
+  const template = [];
+
+  if (canCopy) {
+    template.push({ role: "copy" });
+  }
+
+  if (canPaste) {
+    template.push({ role: "paste" });
+  }
+
+  // xterm prepares a focused hidden textarea on right click, so native edit
+  // roles here can copy terminal selections and paste back into the PTY.
+  Menu.buildFromTemplate(template).popup({
+    window: mainWindow
+  });
+}
+
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1680,
@@ -121,6 +146,10 @@ function createMainWindow() {
 
   mainWindow.webContents.on("will-navigate", event => {
     event.preventDefault();
+  });
+
+  mainWindow.webContents.on("context-menu", (_event, params) => {
+    showContextMenu(params);
   });
 
   // Catch browser-reserved shortcuts before Chromium consumes them.
